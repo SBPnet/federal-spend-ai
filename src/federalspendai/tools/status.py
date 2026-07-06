@@ -22,7 +22,7 @@ def federalspend_status() -> dict[str, Any]:
             "database_path": str(store.db_path),
             "row_counts": counts,
             "last_ingest": last,
-            "datasets_supported": ["awards", "contract_history", "proactive"],
+            "datasets_supported": ["awards", "contract_history", "proactive", "public_accounts"],
         }
     )
 

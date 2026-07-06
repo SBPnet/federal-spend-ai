@@ -8,7 +8,13 @@ from typing import Any
 import duckdb
 
 from federalspendai.config import Settings, get_settings
-from federalspendai.data.schema import AWARDS_TABLE_DDL, INGEST_RUNS_TABLE_DDL
+from federalspendai.data.schema import (
+    AWARDS_TABLE_DDL,
+    EMBEDDINGS_TABLE_DDL,
+    INGEST_RUNS_TABLE_DDL,
+    PUBLIC_ACCOUNTS_TABLE_DDL,
+    VENDOR_LINKS_TABLE_DDL,
+)
 
 
 class DataStore:
@@ -23,6 +29,9 @@ class DataStore:
     conn = duckdb.connect(str(self.db_path))
     conn.execute(AWARDS_TABLE_DDL)
     conn.execute(INGEST_RUNS_TABLE_DDL)
+    conn.execute(PUBLIC_ACCOUNTS_TABLE_DDL)
+    conn.execute(EMBEDDINGS_TABLE_DDL)
+    conn.execute(VENDOR_LINKS_TABLE_DDL)
     return conn
 
   def init_schema(self) -> None:
@@ -33,7 +42,14 @@ class DataStore:
     with self.connect() as conn:
       awards = conn.execute("SELECT COUNT(*) FROM awards").fetchone()[0]
       runs = conn.execute("SELECT COUNT(*) FROM ingest_runs").fetchone()[0]
-    return {"awards": int(awards), "ingest_runs": int(runs)}
+      public_accounts = conn.execute("SELECT COUNT(*) FROM public_accounts").fetchone()[0]
+      embeddings = conn.execute("SELECT COUNT(*) FROM contract_embeddings").fetchone()[0]
+    return {
+      "awards": int(awards),
+      "ingest_runs": int(runs),
+      "public_accounts": int(public_accounts),
+      "contract_embeddings": int(embeddings),
+    }
 
   def last_ingest(self, dataset: str | None = None) -> dict[str, Any] | None:
     query = """
@@ -316,3 +332,174 @@ class DataStore:
     with self.connect() as conn:
       rows = conn.execute(sql, [limit]).fetchall()
     return [{"department": row[0], "contract_count": row[1]} for row in rows]
+
+  def upsert_public_accounts(self, rows: list[dict[str, Any]]) -> int:
+    if not rows:
+      return 0
+    columns = ["id", "fiscal_year", "department", "service_class", "payee", "amount", "source_url"]
+    values = [tuple(row.get(col) for col in columns) for row in rows]
+    placeholders = ", ".join(["?"] * len(columns))
+    col_list = ", ".join(columns)
+    sql = f"""
+      INSERT INTO public_accounts ({col_list}, ingested_at)
+      VALUES ({placeholders}, now())
+      ON CONFLICT (id) DO UPDATE SET
+        fiscal_year = excluded.fiscal_year,
+        department = excluded.department,
+        service_class = excluded.service_class,
+        payee = excluded.payee,
+        amount = excluded.amount,
+        source_url = excluded.source_url,
+        ingested_at = now()
+    """
+    with self.connect() as conn:
+      conn.executemany(sql, values)
+    return len(rows)
+
+  def search_public_accounts(
+    self,
+    *,
+    payee: str | None = None,
+    department: str | None = None,
+    fiscal_year: str | None = None,
+    min_amount: float | None = None,
+    limit: int = 50,
+    offset: int = 0,
+  ) -> list[dict[str, Any]]:
+    clauses: list[str] = []
+    params: list[Any] = []
+    if payee:
+      clauses.append("LOWER(payee) LIKE ?")
+      params.append(f"%{payee.lower()}%")
+    if department:
+      clauses.append("LOWER(department) LIKE ?")
+      params.append(f"%{department.lower()}%")
+    if fiscal_year:
+      clauses.append("fiscal_year = ?")
+      params.append(fiscal_year)
+    if min_amount is not None:
+      clauses.append("amount >= ?")
+      params.append(min_amount)
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    sql = f"""
+      SELECT * FROM public_accounts {where}
+      ORDER BY amount DESC NULLS LAST
+      LIMIT ? OFFSET ?
+    """
+    params.extend([limit, offset])
+    with self.connect() as conn:
+      result = conn.execute(sql, params)
+      columns = [desc[0] for desc in result.description]
+      return [dict(zip(columns, row, strict=True)) for row in result.fetchall()]
+
+  def list_awards_for_embedding(self, limit: int | None = None) -> list[dict[str, Any]]:
+    sql = """
+      SELECT reference_number, title_eng, description_eng, vendor, department, contract_amount
+      FROM awards
+      WHERE title_eng IS NOT NULL OR description_eng IS NOT NULL
+      ORDER BY contract_amount DESC NULLS LAST
+    """
+    params: list[Any] = []
+    if limit is not None:
+      sql += " LIMIT ?"
+      params.append(limit)
+    with self.connect() as conn:
+      result = conn.execute(sql, params)
+      columns = [desc[0] for desc in result.description]
+      return [dict(zip(columns, row, strict=True)) for row in result.fetchall()]
+
+  def upsert_embedding(
+    self,
+    reference_number: str,
+    model: str,
+    embedding: list[float],
+    text_hash: str,
+  ) -> None:
+    with self.connect() as conn:
+      conn.execute(
+        """
+        INSERT INTO contract_embeddings (reference_number, model, embedding, text_hash, updated_at)
+        VALUES (?, ?, ?, ?, now())
+        ON CONFLICT (reference_number) DO UPDATE SET
+          model = excluded.model,
+          embedding = excluded.embedding,
+          text_hash = excluded.text_hash,
+          updated_at = now()
+        """,
+        [reference_number, model, embedding, text_hash],
+      )
+
+  def get_embeddings(self, model: str | None = None) -> list[dict[str, Any]]:
+    sql = "SELECT reference_number, model, embedding, text_hash FROM contract_embeddings"
+    params: list[Any] = []
+    if model:
+      sql += " WHERE model = ?"
+      params.append(model)
+    with self.connect() as conn:
+      result = conn.execute(sql, params)
+      columns = [desc[0] for desc in result.description]
+      return [dict(zip(columns, row, strict=True)) for row in result.fetchall()]
+
+  def upsert_vendor_link(self, vendor: str, payee: str, confidence: float, method: str) -> None:
+    with self.connect() as conn:
+      conn.execute(
+        """
+        INSERT INTO vendor_payee_links (vendor, payee, link_confidence, method, updated_at)
+        VALUES (?, ?, ?, ?, now())
+        ON CONFLICT (vendor, payee) DO UPDATE SET
+          link_confidence = excluded.link_confidence,
+          method = excluded.method,
+          updated_at = now()
+        """,
+        [vendor, payee, confidence, method],
+      )
+
+  def get_vendor_links(self, vendor: str | None = None) -> list[dict[str, Any]]:
+    if vendor:
+      sql = "SELECT * FROM vendor_payee_links WHERE LOWER(vendor) LIKE ? ORDER BY link_confidence DESC"
+      params: list[Any] = [f"%{vendor.lower()}%"]
+    else:
+      sql = "SELECT * FROM vendor_payee_links ORDER BY link_confidence DESC"
+      params = []
+    with self.connect() as conn:
+      result = conn.execute(sql, params)
+      columns = [desc[0] for desc in result.description]
+      return [dict(zip(columns, row, strict=True)) for row in result.fetchall()]
+
+  def monthly_department_spend(self) -> list[dict[str, Any]]:
+    sql = """
+      SELECT department,
+             strftime(contract_award_date, '%Y-%m') AS month,
+             SUM(COALESCE(contract_amount, 0)) AS total_amount,
+             COUNT(*) AS contract_count
+      FROM awards
+      WHERE contract_award_date IS NOT NULL AND department IS NOT NULL
+      GROUP BY 1, 2
+      ORDER BY 1, 2
+    """
+    with self.connect() as conn:
+      result = conn.execute(sql)
+      columns = [desc[0] for desc in result.description]
+      return [dict(zip(columns, row, strict=True)) for row in result.fetchall()]
+
+  def vendor_monthly_spend(self, vendor: str | None = None) -> list[dict[str, Any]]:
+    clauses = ["contract_award_date IS NOT NULL", "vendor IS NOT NULL"]
+    params: list[Any] = []
+    if vendor:
+      clauses.append("LOWER(vendor) LIKE ?")
+      params.append(f"%{vendor.lower()}%")
+    where = " AND ".join(clauses)
+    sql = f"""
+      SELECT vendor,
+             strftime(contract_award_date, '%Y-%m') AS month,
+             SUM(COALESCE(contract_amount, 0)) AS total_amount,
+             COUNT(*) AS contract_count
+      FROM awards
+      WHERE {where}
+      GROUP BY 1, 2
+      ORDER BY total_amount DESC
+    """
+    with self.connect() as conn:
+      result = conn.execute(sql, params)
+      columns = [desc[0] for desc in result.description]
+      return [dict(zip(columns, row, strict=True)) for row in result.fetchall()]

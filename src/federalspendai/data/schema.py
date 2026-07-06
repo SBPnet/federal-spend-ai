@@ -44,6 +44,7 @@ DATASET_PACKAGES: dict[str, str] = {
     "awards": "a1acb126-9ce8-40a9-b889-5da2b1dd20cb",
     "contract_history": "4fe645a1-ffcd-40c1-9385-2c771be956a4",
     "proactive": "d8f85d91-7dec-4fd1-8055-483b77225d8b",
+    "public_accounts": "ac597ff8-ee13-48c3-b315-42e528090af2",
 }
 
 # Fallback direct URLs when CKAN discovery fails
@@ -54,6 +55,21 @@ FALLBACK_CSV_URLS: dict[str, list[str]] = {
     "contract_history": [
         "https://canadabuys.canada.ca/opendata/pub/contractHistoryComplete-historiqueContratsComplet.csv",
     ],
+    "public_accounts": [
+        "https://donnees-data.tpsgc-pwgsc.gc.ca/ba1/idsps-dipss/idsps-dipss-2024.csv",
+    ],
+}
+
+PUBLIC_ACCOUNTS_COLUMN_MAP: dict[str, str] = {
+    "Fscl-yr_Ex-fin": "fiscal_year",
+    "Dept-name_Nom-min_eng": "department",
+    "Dept-name_Nom-min_fra": "department_fra",
+    "Rpt-obj_Art-rppt_eng": "service_class",
+    "Rpt-obj_Art-rppt_fra": "service_class_fra",
+    "Proj-desc_eng": "payee",
+    "Proj-desc_fra": "payee_fra",
+    "Xpnd-current-yr_Dep-ex-courant": "expenditure_current_year",
+    "Aggregate-payments_Versements-totalisant": "aggregate_payment",
 }
 
 
@@ -124,5 +140,39 @@ CREATE TABLE IF NOT EXISTS ingest_runs (
     message VARCHAR,
     started_at TIMESTAMP DEFAULT now(),
     finished_at TIMESTAMP
+);
+"""
+
+PUBLIC_ACCOUNTS_TABLE_DDL = """
+CREATE TABLE IF NOT EXISTS public_accounts (
+    id VARCHAR PRIMARY KEY,
+    fiscal_year VARCHAR,
+    department VARCHAR,
+    service_class VARCHAR,
+    payee VARCHAR,
+    amount DOUBLE,
+    source_url VARCHAR,
+    ingested_at TIMESTAMP DEFAULT now()
+);
+"""
+
+EMBEDDINGS_TABLE_DDL = """
+CREATE TABLE IF NOT EXISTS contract_embeddings (
+    reference_number VARCHAR PRIMARY KEY,
+    model VARCHAR NOT NULL,
+    embedding DOUBLE[],
+    text_hash VARCHAR,
+    updated_at TIMESTAMP DEFAULT now()
+);
+"""
+
+VENDOR_LINKS_TABLE_DDL = """
+CREATE TABLE IF NOT EXISTS vendor_payee_links (
+    vendor VARCHAR,
+    payee VARCHAR,
+    link_confidence DOUBLE,
+    method VARCHAR,
+    updated_at TIMESTAMP DEFAULT now(),
+    PRIMARY KEY (vendor, payee)
 );
 """

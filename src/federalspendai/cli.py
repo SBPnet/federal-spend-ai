@@ -24,7 +24,7 @@ def cli() -> None:
     "--datasets",
     default="awards",
     show_default=True,
-    help="Comma-separated datasets: awards, contract_history, proactive",
+    help="Comma-separated datasets: awards, contract_history, proactive, public_accounts",
 )
 @click.option("--full", is_flag=True, help="Re-download and reload all selected datasets.")
 @click.option("--incremental", is_flag=True, help="Alias for default ingest behavior.")
@@ -55,7 +55,7 @@ def ingest_cmd(
         click.echo(
             "Error: No datasets specified.\n"
             "  federalspendai ingest --datasets awards\n"
-            "  Available: awards, contract_history, proactive",
+            "  Available: awards, contract_history, proactive, public_accounts",
             err=True,
         )
         raise SystemExit(1)
@@ -166,8 +166,60 @@ def status_cmd(as_json: bool) -> None:
         data = payload["data"]
         click.echo(f"database: {data['database_path']}")
         click.echo(f"awards: {data['row_counts'].get('awards', 0)}")
+        click.echo(f"public_accounts: {data['row_counts'].get('public_accounts', 0)}")
+        click.echo(f"embeddings: {data['row_counts'].get('contract_embeddings', 0)}")
         if data.get("last_ingest"):
             click.echo(f"last ingest: {data['last_ingest']}")
+
+
+@cli.command("embed")
+@click.option("--limit", default=0, show_default=True, help="Max contracts to embed (0 = all).")
+@click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON output.")
+@click.option("--emit-events", is_flag=True, help="Emit Cognitive Substrate EmbeddingIndexed event.")
+def embed_cmd(limit: int, as_json: bool, emit_events: bool) -> None:
+    """Build contract embedding index for semantic search."""
+    from federalspendai.tools.search_semantic import build_embeddings_index
+
+    payload = build_embeddings_index(limit=None if limit == 0 else limit, emit_events=emit_events)
+    if as_json:
+        click.echo(json.dumps(payload, indent=2, default=str))
+    else:
+        data = payload["data"]
+        click.echo(f"indexed: {data.get('indexed', 0)} contracts with model {data.get('model')}")
+
+
+@cli.command("detect-anomalies")
+@click.option("--department", default=None, help="Filter anomalies to one department.")
+@click.option("--z-threshold", default=2.5, show_default=True)
+@click.option("--json", "as_json", is_flag=True)
+def detect_anomalies_cmd(department: str | None, z_threshold: float, as_json: bool) -> None:
+    """Detect spending anomalies in ingested contract data."""
+    from federalspendai.tools.anomaly import detect_anomalies_tool
+
+    payload = detect_anomalies_tool(department=department, z_threshold=z_threshold)
+    if as_json:
+        click.echo(json.dumps(payload, indent=2, default=str))
+    else:
+        data = payload["data"]
+        click.echo(f"anomalies found: {data.get('total', 0)}")
+
+
+@cli.command("trace")
+@click.argument("vendor")
+@click.option("--department", default=None)
+@click.option("--json", "as_json", is_flag=True)
+def trace_cmd(vendor: str, department: str | None, as_json: bool) -> None:
+    """Trace money flow for a vendor across contracts and Public Accounts."""
+    from federalspendai.tools.graph import trace_money_flow_tool
+
+    payload = trace_money_flow_tool(vendor=vendor, department=department)
+    if as_json:
+        click.echo(json.dumps(payload, indent=2, default=str))
+    else:
+        data = payload["data"]
+        click.echo(f"vendor: {data.get('vendor')}")
+        click.echo(f"contract_total: {data.get('contract_total')}")
+        click.echo(f"public_account_links: {len(data.get('public_account_links', []))}")
 
 
 def main() -> None:

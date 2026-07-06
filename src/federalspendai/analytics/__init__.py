@@ -1,10 +1,7 @@
-"""Spending anomaly detection (Phase 2 placeholder)."""
+"""Analytics package."""
 
-from __future__ import annotations
+from federalspendai.analytics.anomaly import detect_anomalies
+from federalspendai.analytics.effects import correlate_effects
+from federalspendai.analytics.investigation import investigate_anomaly
 
-from typing import Any
-
-
-def detect_spending_anomalies() -> list[dict[str, Any]]:
-    """Placeholder for future anomaly detection workflows."""
-    return []
+__all__ = ["detect_anomalies", "investigate_anomaly", "correlate_effects"]
