@@ -12,6 +12,8 @@ federalspendai embed
 federalspendai serve
 ```
 
+> **Fixtures:** `MX-444028039551` / Irving Oil examples use **synthetic illustrative data** in `tests/fixtures/` for offline demos. Ingest live data before publishing real findings.
+
 ## MCP tool catalog
 
 ### Data & query
@@ -40,6 +42,14 @@ federalspendai serve
 5. `trace_money_flow_tool(vendor="Irving Oil Limited")`
 6. `export_graph_tool(vendor="Irving Oil Limited", emit_events=true)`
 
+Or run the BigPines companion demo:
+
+```bash
+python examples/bigpines_companion_demo.py --skip-embed
+```
+
 ## Response format
 
 `{ "_meta": {...}, "data": ... }` or `{ "error": { "code", "message" } }`
+
+`_meta` includes Open Government Licence – Canada provenance fields on all tool responses.

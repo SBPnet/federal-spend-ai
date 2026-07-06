@@ -7,13 +7,18 @@ from federalspendai.config import Settings
 from federalspendai.substrate.events import emit_anomaly_flagged, emit_embedding_indexed
 
 
-def test_emit_event_writes_file(tmp_path: Path):
+def test_emit_event_writes_legacy_and_experience_files(tmp_path: Path):
     settings = Settings(data_dir=tmp_path)
     event = emit_embedding_indexed({"indexed": 3, "model": "test"}, settings=settings)
-    files = list((tmp_path / "events").glob("*.json"))
-    assert files
-    payload = json.loads(files[0].read_text())
-    assert payload["event_type"] == "EmbeddingIndexed"
+    legacy_files = list((tmp_path / "events").glob("*.json"))
+    experience_files = list((tmp_path / "events" / "experience").glob("*.json"))
+    assert legacy_files
+    assert experience_files
+    legacy = json.loads(legacy_files[0].read_text())
+    experience = json.loads(experience_files[0].read_text())
+    assert legacy["event_type"] == "EmbeddingIndexed"
+    assert legacy["event_id"]
+    assert experience["eventId"] == legacy["event_id"]
     assert event.payload["indexed"] == 3
 
 
