@@ -94,7 +94,33 @@ See [`examples/substrate_event_consumer.py`](examples/substrate_event_consumer.p
 
 ## Container
 
-The repo includes a `Dockerfile` and `docker-compose.yml` for running the MCP server and CLI in Docker.
+The repo includes a `Dockerfile`, `docker-compose.yml`, and `setup.sh` for running the MCP server and CLI in Docker.
+
+### VPS quick install (CyberPanel / bare Linux)
+
+On a fresh VPS (Ubuntu, AlmaLinux, Rocky — with or without [CyberPanel](https://cyberpanel.net/)), run as **root**:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SBPnet/federal-spend-ai/main/setup.sh -o setup.sh
+chmod +x setup.sh
+./setup.sh --with-swap
+```
+
+Or clone first and run locally:
+
+```bash
+git clone https://github.com/SBPnet/federal-spend-ai.git /opt/federalspendai
+cd /opt/federalspendai
+sudo ./setup.sh --with-swap
+```
+
+The script installs Docker (unless already present), builds the image, ingests sample fixtures, builds embeddings, and starts MCP on **`127.0.0.1:8000`** so OpenLiteSpeed / website ports **80/443** stay free. Connect from your machine via SSH tunnel:
+
+```bash
+ssh -L 8000:127.0.0.1:8000 root@YOUR_VPS_IP
+```
+
+Options: `./setup.sh --help` — use `--data live` for open.canada.ca ingest, `--skip-docker-install` if CyberPanel Docker is already configured.
 
 ### Build
 
@@ -107,7 +133,7 @@ docker build -t federalspendai .
 ```bash
 docker run -d \
   --name federalspendai \
-  -p 8000:8000 \
+  -p 127.0.0.1:8000:8000 \
   -v federalspendai-data:/data \
   federalspendai
 ```
