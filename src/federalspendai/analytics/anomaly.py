@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import statistics
-import uuid
 from typing import Any
 
+from federalspendai.analytics.anomaly_store import attach_stable_ids, sync_detected_anomalies
 from federalspendai.data.store import DataStore
 
 
@@ -44,7 +44,6 @@ def detect_spending_anomalies(
             if z is not None and abs(z) >= z_threshold:
                 anomalies.append(
                     {
-                        "anomaly_id": str(uuid.uuid4()),
                         "type": "department_monthly_spend",
                         "department": dept,
                         "month": row["month"],
@@ -83,7 +82,6 @@ def flag_vendor_anomalies(
         if z is not None and abs(z) >= z_threshold:
             anomalies.append(
                 {
-                    "anomaly_id": str(uuid.uuid4()),
                     "type": "vendor_monthly_spike",
                     "vendor": vendor,
                     "month": latest["month"],
@@ -103,8 +101,9 @@ def detect_anomalies(
     include_vendors: bool = True,
     z_threshold: float = 2.5,
     store: DataStore | None = None,
+    persist: bool = True,
 ) -> dict[str, Any]:
-    """Run all anomaly detectors."""
+    """Run all anomaly detectors and optionally persist results."""
     store = store or DataStore()
     dept_flags = detect_spending_anomalies(
         department=department,
@@ -112,11 +111,14 @@ def detect_anomalies(
         store=store,
     )
     vendor_flags = flag_vendor_anomalies(z_threshold=z_threshold, store=store) if include_vendors else []
-    return {
+    raw = {
         "department_anomalies": dept_flags,
         "vendor_anomalies": vendor_flags,
         "total": len(dept_flags) + len(vendor_flags),
     }
+    if persist:
+        return sync_detected_anomalies(raw, store=store)
+    return attach_stable_ids(raw)
 
 
 def _sample_contracts(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+import json
 from typing import Any
 
 import duckdb
@@ -13,6 +14,7 @@ from federalspendai.data.schema import (
     EMBEDDINGS_TABLE_DDL,
     INGEST_RUNS_TABLE_DDL,
     PUBLIC_ACCOUNTS_TABLE_DDL,
+    SPENDING_ANOMALIES_TABLE_DDL,
     VENDOR_LINKS_TABLE_DDL,
 )
 
@@ -32,6 +34,7 @@ class DataStore:
     conn.execute(PUBLIC_ACCOUNTS_TABLE_DDL)
     conn.execute(EMBEDDINGS_TABLE_DDL)
     conn.execute(VENDOR_LINKS_TABLE_DDL)
+    conn.execute(SPENDING_ANOMALIES_TABLE_DDL)
     return conn
 
   def init_schema(self) -> None:
@@ -44,11 +47,15 @@ class DataStore:
       runs = conn.execute("SELECT COUNT(*) FROM ingest_runs").fetchone()[0]
       public_accounts = conn.execute("SELECT COUNT(*) FROM public_accounts").fetchone()[0]
       embeddings = conn.execute("SELECT COUNT(*) FROM contract_embeddings").fetchone()[0]
+      anomalies = conn.execute(
+        "SELECT COUNT(*) FROM spending_anomalies WHERE anomaly_status = 'open'"
+      ).fetchone()[0]
     return {
       "awards": int(awards),
       "ingest_runs": int(runs),
       "public_accounts": int(public_accounts),
       "contract_embeddings": int(embeddings),
+      "open_anomalies": int(anomalies),
     }
 
   def last_ingest(self, dataset: str | None = None) -> dict[str, Any] | None:
@@ -511,3 +518,219 @@ class DataStore:
       result = conn.execute(sql, params)
       columns = [desc[0] for desc in result.description]
       return [dict(zip(columns, row, strict=True)) for row in result.fetchall()]
+
+  def _serialize_anomaly_row(self, row: dict[str, Any]) -> dict[str, Any]:
+    payload = dict(row)
+    if payload.get("sample_contracts") and isinstance(payload["sample_contracts"], str):
+      payload["sample_contracts"] = json.loads(payload["sample_contracts"])
+    for field in ("first_seen_at", "last_seen_at", "last_updated_at", "last_investigated_at"):
+      value = payload.get(field)
+      if value is not None and hasattr(value, "isoformat"):
+        payload[field] = value.isoformat()
+    return payload
+
+  def upsert_spending_anomaly(self, item: dict[str, Any], evidence_fingerprint: str) -> str:
+    """Insert or update a detected anomaly. Returns new|updated|unchanged."""
+    anomaly_id = item["anomaly_id"]
+    existing = self.get_spending_anomaly(anomaly_id)
+    sample_json = json.dumps(item.get("sample_contracts", []), default=str)
+
+    if existing is None:
+      with self.connect() as conn:
+        conn.execute(
+          """
+          INSERT INTO spending_anomalies (
+            anomaly_id, anomaly_type, department, vendor, month,
+            observed_amount, baseline_mean, z_score, contract_count,
+            sample_contracts, evidence_fingerprint, anomaly_status,
+            investigation_status, first_seen_at, last_seen_at, last_updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', 'pending', now(), now(), now())
+          """,
+          [
+            anomaly_id,
+            item["type"],
+            item.get("department"),
+            item.get("vendor"),
+            item["month"],
+            item.get("observed_amount"),
+            item.get("baseline_mean"),
+            item.get("z_score"),
+            item.get("contract_count"),
+            sample_json,
+            evidence_fingerprint,
+          ],
+        )
+      return "new"
+
+    if existing.get("evidence_fingerprint") == evidence_fingerprint:
+      with self.connect() as conn:
+        conn.execute(
+          "UPDATE spending_anomalies SET last_seen_at = now() WHERE anomaly_id = ?",
+          [anomaly_id],
+        )
+      return "unchanged"
+
+    investigation_status = existing.get("investigation_status")
+    if investigation_status == "completed":
+      investigation_status = "stale"
+
+    with self.connect() as conn:
+      conn.execute(
+        """
+        UPDATE spending_anomalies
+        SET observed_amount = ?,
+            baseline_mean = ?,
+            z_score = ?,
+            contract_count = ?,
+            sample_contracts = ?,
+            evidence_fingerprint = ?,
+            anomaly_status = 'open',
+            investigation_status = ?,
+            last_seen_at = now(),
+            last_updated_at = now()
+        WHERE anomaly_id = ?
+        """,
+        [
+          item.get("observed_amount"),
+          item.get("baseline_mean"),
+          item.get("z_score"),
+          item.get("contract_count"),
+          sample_json,
+          evidence_fingerprint,
+          investigation_status,
+          anomaly_id,
+        ],
+      )
+    return "updated"
+
+  def get_spending_anomaly(self, anomaly_id: str) -> dict[str, Any] | None:
+    with self.connect() as conn:
+      result = conn.execute(
+        "SELECT * FROM spending_anomalies WHERE anomaly_id = ?",
+        [anomaly_id],
+      )
+      row = result.fetchone()
+      if not row:
+        return None
+      columns = [desc[0] for desc in result.description]
+      stored = dict(zip(columns, row, strict=True))
+    stored["type"] = stored.pop("anomaly_type")
+    return self._serialize_anomaly_row(stored)
+
+  def find_spending_anomaly(
+    self,
+    *,
+    department: str | None = None,
+    vendor: str | None = None,
+    anomaly_status: str = "open",
+  ) -> dict[str, Any] | None:
+    clauses = ["anomaly_status = ?"]
+    params: list[Any] = [anomaly_status]
+    if department:
+      clauses.append("LOWER(department) LIKE ?")
+      params.append(f"%{department.lower()}%")
+    if vendor:
+      clauses.append("LOWER(vendor) LIKE ?")
+      params.append(f"%{vendor.lower()}%")
+    sql = f"""
+      SELECT * FROM spending_anomalies
+      WHERE {' AND '.join(clauses)}
+      ORDER BY ABS(z_score) DESC, last_seen_at DESC
+      LIMIT 1
+    """
+    with self.connect() as conn:
+      result = conn.execute(sql, params)
+      row = result.fetchone()
+      if not row:
+        return None
+      columns = [desc[0] for desc in result.description]
+      stored = dict(zip(columns, row, strict=True))
+    stored["type"] = stored.pop("anomaly_type")
+    return self._serialize_anomaly_row(stored)
+
+  def list_spending_anomalies(
+    self,
+    *,
+    anomaly_status: str | None = "open",
+    investigation_status: str | None = None,
+    limit: int = 100,
+  ) -> list[dict[str, Any]]:
+    clauses: list[str] = []
+    params: list[Any] = []
+    if anomaly_status:
+      clauses.append("anomaly_status = ?")
+      params.append(anomaly_status)
+    if investigation_status:
+      clauses.append("investigation_status = ?")
+      params.append(investigation_status)
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    sql = f"""
+      SELECT * FROM spending_anomalies
+      {where}
+      ORDER BY ABS(z_score) DESC, last_seen_at DESC
+      LIMIT ?
+    """
+    params.append(limit)
+    with self.connect() as conn:
+      result = conn.execute(sql, params)
+      columns = [desc[0] for desc in result.description]
+      rows = [dict(zip(columns, row, strict=True)) for row in result.fetchall()]
+    serialized: list[dict[str, Any]] = []
+    for row in rows:
+      row["type"] = row.pop("anomaly_type")
+      serialized.append(self._serialize_anomaly_row(row))
+    return serialized
+
+  def resolve_spending_anomalies_not_seen(self, seen_ids: list[str]) -> int:
+    with self.connect() as conn:
+      if seen_ids:
+        placeholders = ", ".join(["?"] * len(seen_ids))
+        result = conn.execute(
+          f"""
+          UPDATE spending_anomalies
+          SET anomaly_status = 'resolved', last_updated_at = now()
+          WHERE anomaly_status = 'open' AND anomaly_id NOT IN ({placeholders})
+          RETURNING anomaly_id
+          """,
+          seen_ids,
+        )
+      else:
+        result = conn.execute(
+          """
+          UPDATE spending_anomalies
+          SET anomaly_status = 'resolved', last_updated_at = now()
+          WHERE anomaly_status = 'open'
+          RETURNING anomaly_id
+          """
+        )
+      return len(result.fetchall())
+
+  def save_anomaly_investigation(
+    self,
+    anomaly_id: str,
+    report: dict[str, Any],
+    investigation_fingerprint: str,
+  ) -> None:
+    with self.connect() as conn:
+      conn.execute(
+        """
+        UPDATE spending_anomalies
+        SET investigation_status = 'completed',
+            investigation_fingerprint = ?,
+            investigation_report = ?,
+            last_investigated_at = now(),
+            last_updated_at = now()
+        WHERE anomaly_id = ?
+        """,
+        [investigation_fingerprint, json.dumps(report, default=str), anomaly_id],
+      )
+
+  def get_anomaly_investigation_report(self, anomaly_id: str) -> dict[str, Any] | None:
+    with self.connect() as conn:
+      row = conn.execute(
+        "SELECT investigation_report FROM spending_anomalies WHERE anomaly_id = ?",
+        [anomaly_id],
+      ).fetchone()
+    if not row or not row[0]:
+      return None
+    return json.loads(row[0])
