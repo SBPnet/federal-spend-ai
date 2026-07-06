@@ -1,0 +1,1 @@
+Paste the full detailed project prompt from earlier conversations here for Cursor to build upon.
