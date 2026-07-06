@@ -440,6 +440,14 @@ class DataStore:
       columns = [desc[0] for desc in result.description]
       return [dict(zip(columns, row, strict=True)) for row in result.fetchall()]
 
+  def get_embedding_text_hashes(self, model: str) -> dict[str, str]:
+    with self.connect() as conn:
+      rows = conn.execute(
+        "SELECT reference_number, text_hash FROM contract_embeddings WHERE model = ?",
+        [model],
+      ).fetchall()
+    return {row[0]: row[1] for row in rows if row[1]}
+
   def upsert_vendor_link(self, vendor: str, payee: str, confidence: float, method: str) -> None:
     with self.connect() as conn:
       conn.execute(

@@ -1,0 +1,10 @@
+{
+  "plugins": [
+    {
+      "name": "federal-spend-ai",
+      "type": "builtin",
+      "enabled": true,
+      "description": "Core Canadian federal spending analysis tools"
+    }
+  ]
+}

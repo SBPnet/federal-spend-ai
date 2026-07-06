@@ -11,7 +11,7 @@ IMAGE_NAME="${IMAGE_NAME:-federalspendai}"
 VOLUME_NAME="${VOLUME_NAME:-federalspendai-data}"
 BIND_HOST="${BIND_HOST:-127.0.0.1}"
 BIND_PORT="${BIND_PORT:-8000}"
-DATA_SOURCE="${DATA_SOURCE:-fixtures}"
+DATA_SOURCE="${DATA_SOURCE:-live}"
 WITH_SWAP="${WITH_SWAP:-0}"
 SKIP_DOCKER_INSTALL="${SKIP_DOCKER_INSTALL:-0}"
 SKIP_INIT="${SKIP_INIT:-0}"
@@ -20,8 +20,9 @@ usage() {
   cat <<'EOF'
 FederalSpendAI VPS setup (CyberPanel-friendly)
 
-Installs Docker if needed, builds the image, loads data, and starts the MCP server
-on localhost so OpenLiteSpeed / website ports (80/443) are not affected.
+Installs Docker if needed, builds the image, runs an initial analysis cycle, and
+starts the FederalSpendAI engine (auto-pull + analyze + MCP plugin host) on
+localhost so OpenLiteSpeed / website ports (80/443) are not affected.
 
 Usage:
   ./setup.sh [options]
@@ -29,11 +30,11 @@ Usage:
 Options:
   --install-dir PATH     Install location (default: /opt/federalspendai)
   --branch NAME          Git branch to deploy (default: main)
-  --data SOURCE          fixtures | live | skip (default: fixtures)
+  --data SOURCE          fixtures | live | skip (default: live)
   --bind HOST:PORT       Listen address (default: 127.0.0.1:8000)
   --with-swap            Create a 2G swapfile if none exists
   --skip-docker-install  Assume Docker is already installed (e.g. CyberPanel Docker)
-  --skip-init            Skip ingest/embed (start server only)
+  --skip-init            Skip initial cycle (engine still auto-pulls on start)
   -h, --help             Show this help
 
 Examples:
@@ -175,40 +176,34 @@ stop_existing_container() {
 
 run_init() {
   if [[ "$SKIP_INIT" == "1" || "$DATA_SOURCE" == "skip" ]]; then
-    log "Skipping ingest/embed."
+    log "Skipping initial engine cycle."
     return
   fi
 
   case "$DATA_SOURCE" in
     fixtures)
-      log "Ingesting sample fixtures and building embeddings (first run may take several minutes)..."
+      log "Loading sample fixtures, then running one engine cycle..."
       docker run --rm \
         -v "${VOLUME_NAME}:/data" \
         -v "${INSTALL_DIR}/tests/fixtures:/fixtures:ro" \
         -e FEDERALSPEND_DATA_DIR=/data \
         "$IMAGE_NAME" \
-        federalspendai ingest --datasets awards,public_accounts --fixture-dir /fixtures
+        sh -c "federalspendai ingest --datasets awards,public_accounts --fixture-dir /fixtures && federalspendai engine --once"
       ;;
     live)
-      log "Ingesting live open.canada.ca data (network required)..."
+      log "Running initial live ingest/analyze cycle (network required)..."
       docker run --rm \
         -v "${VOLUME_NAME}:/data" \
         -e FEDERALSPEND_DATA_DIR=/data \
+        -e FEDERALSPEND_ENGINE_DATASETS=awards,public_accounts \
         "$IMAGE_NAME" \
-        federalspendai ingest --datasets awards,public_accounts
+        federalspendai engine --once
       ;;
   esac
-
-  log "Building embedding index..."
-  docker run --rm \
-    -v "${VOLUME_NAME}:/data" \
-    -e FEDERALSPEND_DATA_DIR=/data \
-    "$IMAGE_NAME" \
-    federalspendai embed
 }
 
 start_server() {
-  log "Starting MCP server on ${BIND_HOST}:${BIND_PORT}..."
+  log "Starting FederalSpendAI engine on ${BIND_HOST}:${BIND_PORT}..."
   stop_existing_container
   docker run -d \
     --name "$CONTAINER_NAME" \
@@ -216,21 +211,30 @@ start_server() {
     -p "${BIND_HOST}:${BIND_PORT}:8000" \
     -v "${VOLUME_NAME}:/data" \
     -e FEDERALSPEND_DATA_DIR=/data \
-    "$IMAGE_NAME"
+    -e FEDERALSPEND_ENGINE_ENABLED=true \
+    -e FEDERALSPEND_ENGINE_DATASETS=awards,public_accounts \
+    -e FEDERALSPEND_ENGINE_POLL_INTERVAL_SECONDS=3600 \
+    -e FEDERALSPEND_ENGINE_RUN_ON_START=true \
+    "$IMAGE_NAME" \
+    federalspendai engine --transport sse --port 8000
 
-  log "Container status:"
+  log "Engine status:"
   docker run --rm -v "${VOLUME_NAME}:/data" -e FEDERALSPEND_DATA_DIR=/data "$IMAGE_NAME" federalspendai status
 }
 
 print_summary() {
   cat <<EOF
 
-FederalSpendAI is running.
+FederalSpendAI engine is running.
 
   Container:  ${CONTAINER_NAME}
-  MCP (SSE):  http://${BIND_HOST}:${BIND_PORT}
+  Engine MCP: http://${BIND_HOST}:${BIND_PORT}
   Data vol:   ${VOLUME_NAME}
   Install:    ${INSTALL_DIR}
+  Plugins:    /data/plugins.json (auto-created)
+
+The engine auto-pulls open Canada data, refreshes embeddings, and detects
+anomalies every hour (configurable via FEDERALSPEND_ENGINE_POLL_INTERVAL_SECONDS).
 
 CyberPanel / OpenLiteSpeed: websites on 80/443 are unchanged.
 Default bind is localhost only — use an SSH tunnel for remote access:
@@ -241,9 +245,11 @@ Logs:    docker logs -f ${CONTAINER_NAME}
 Restart: docker restart ${CONTAINER_NAME}
 Status:  docker run --rm -v ${VOLUME_NAME}:/data ${IMAGE_NAME} federalspendai status
 
-Re-ingest live data later:
-  docker run --rm -v ${VOLUME_NAME}:/data ${IMAGE_NAME} federalspendai ingest --datasets awards,public_accounts
-  docker run --rm -v ${VOLUME_NAME}:/data ${IMAGE_NAME} federalspendai embed
+Re-run one analysis cycle manually:
+  docker run --rm -v ${VOLUME_NAME}:/data ${IMAGE_NAME} federalspendai engine --once
+
+Add MCP plugins in /var/lib/docker/volumes/${VOLUME_NAME}/_data/plugins.json
+(or mount a custom plugins.json into /data/plugins.json).
 
 EOF
 }

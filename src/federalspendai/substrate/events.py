@@ -43,3 +43,11 @@ def emit_anomaly_flagged(anomaly: dict[str, Any], settings: Settings | None = No
 
 def emit_embedding_indexed(summary: dict[str, Any], settings: Settings | None = None) -> SubstrateEvent:
     return emit_event("EmbeddingIndexed", summary, settings=settings)
+
+
+def emit_ingest_completed(result: dict[str, Any], settings: Settings | None = None) -> SubstrateEvent:
+    return emit_event("IngestCompleted", result, settings=settings)
+
+
+def emit_engine_cycle_completed(summary: dict[str, Any], settings: Settings | None = None) -> SubstrateEvent:
+    return emit_event("EngineCycleCompleted", summary, settings=settings)

@@ -78,6 +78,7 @@ def ingest_dataset(
     settings: Settings | None = None,
     dry_run: bool = False,
     fixture_path: Path | None = None,
+    incremental: bool = False,
 ) -> dict[str, Any]:
     """Download and ingest one dataset, or load from a fixture path."""
     settings = settings or get_settings()
@@ -123,6 +124,18 @@ def ingest_dataset(
     dest = cache_dir / filename
 
     checksum = download_file(preferred, dest, settings)
+    if incremental:
+        last = store.last_ingest(dataset)
+        if last and last.get("checksum") == checksum:
+            return {
+                "dataset": dataset,
+                "rows": last.get("row_count", 0),
+                "source_url": preferred,
+                "checksum": checksum,
+                "skipped": True,
+                "cache_path": str(dest),
+            }
+
     count = ingest_csv_path(dest, dataset, preferred, store)
     return {
         "dataset": dataset,
@@ -139,6 +152,7 @@ def ingest_all(
     settings: Settings | None = None,
     dry_run: bool = False,
     fixture_dir: Path | None = None,
+    incremental: bool = False,
 ) -> list[dict[str, Any]]:
     """Ingest multiple datasets."""
     datasets = datasets or ["awards"]
@@ -155,6 +169,7 @@ def ingest_all(
                 settings=settings,
                 dry_run=dry_run,
                 fixture_path=fixture_path,
+                incremental=incremental,
             )
         )
     return results

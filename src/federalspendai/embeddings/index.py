@@ -46,24 +46,41 @@ def build_embedding_index(
     settings: Settings | None = None,
     model_name: str = DEFAULT_MODEL,
     limit: int | None = None,
+    incremental: bool = False,
 ) -> dict[str, Any]:
-    """Embed all ingested contracts and store vectors in DuckDB."""
+    """Embed ingested contracts and store vectors in DuckDB."""
     settings = settings or get_settings()
     store = DataStore(settings)
     rows = store.list_awards_for_embedding(limit=limit)
     if not rows:
-        return {"indexed": 0, "model": model_name}
+        return {"indexed": 0, "skipped": 0, "model": model_name}
 
-    texts = [contract_text(row) for row in rows]
+    existing_hashes = store.get_embedding_text_hashes(model_name) if incremental else {}
+    pending: list[tuple[dict[str, Any], str, str]] = []
+    skipped = 0
+
+    for row in rows:
+        text = contract_text(row)
+        text_hash = _text_hash(text)
+        ref = row["reference_number"]
+        if incremental and existing_hashes.get(ref) == text_hash:
+            skipped += 1
+            continue
+        pending.append((row, text, text_hash))
+
+    if not pending:
+        return {"indexed": 0, "skipped": skipped, "model": model_name}
+
+    texts = [text for _, text, _ in pending]
     vectors = embed_texts(texts, model_name=model_name)
-    for row, text, vector in zip(rows, texts, vectors, strict=True):
+    for (row, text, text_hash), vector in zip(pending, vectors, strict=True):
         store.upsert_embedding(
             row["reference_number"],
             model_name,
             vector.tolist(),
-            _text_hash(text),
+            text_hash,
         )
-    return {"indexed": len(rows), "model": model_name}
+    return {"indexed": len(pending), "skipped": skipped, "model": model_name}
 
 
 def semantic_search(
