@@ -7,6 +7,7 @@ Open-source **Canadian federal spending analysis** with MCP tools, local DuckDB 
 ## Features
 
 - **MCP server** with 8 query tools for contracts, vendors, departments, and spending aggregates
+- **NLP pipeline** — entity extraction (spaCy / optional Blackstone), risk flags, summaries
 - **OSS data pipeline** — downloads official open CSVs via CKAN, normalizes bilingual columns, stores in DuckDB
 - **Agent-friendly CLI** — `ingest`, `serve`, `status` with `--dry-run` and `--json`
 - **Modular layout** — ready for NLP, embeddings, and anomaly detection extensions
@@ -54,8 +55,19 @@ federalspendai ingest --datasets awards
 # Check local database status
 federalspendai status --json
 
+# NLP analysis on an ingested contract
+federalspendai analyze --reference-number MX-444028039551
+
 # Run MCP server (stdio)
 federalspendai serve
+```
+
+### NLP setup (optional Blackstone)
+
+```bash
+python -m spacy download en_core_web_sm
+pip install -e ".[nlp]"  # optional Blackstone package
+# Blackstone model: pip install https://blackstone-model.s3-eu-west-1.amazonaws.com/en_blackstone_proto-0.0.1.tar.gz
 ```
 
 ## Cursor / Claude MCP configuration
@@ -87,6 +99,9 @@ See [`examples/cursor_mcp_config.json`](examples/cursor_mcp_config.json):
 | `spending_by_department_tool` | Spending aggregated by contracting entity |
 | `spending_by_category_tool` | Spending by UNSPSC / procurement category |
 | `list_departments_tool` | Department list with contract counts |
+| `extract_legal_entities_tool` | NER on contract text (spaCy or Blackstone) |
+| `analyze_contract_text_tool` | Entities, risk flags, summary for text or ingested contract |
+| `batch_nlp_tool` | Batch NLP over multiple reference numbers |
 
 ## Example agent prompts
 

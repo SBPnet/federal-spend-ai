@@ -14,6 +14,7 @@ from federalspendai.tools import (
     spending_by_department,
     top_vendors,
 )
+from federalspendai.tools import nlp as nlp_tools
 
 mcp = FastMCP(
     name="federal-spend-ai",
@@ -102,6 +103,32 @@ def spending_by_category_tool(limit: int = 50) -> dict:
 def list_departments_tool(limit: int = 100) -> dict:
     """List contracting departments with contract counts for disambiguation."""
     return list_departments(limit=limit)
+
+
+@mcp.tool()
+def extract_legal_entities_tool(text: str, backend: str = "auto") -> dict:
+    """Extract named entities from contract or legal text using spaCy or Blackstone."""
+    return nlp_tools.extract_legal_entities(text=text, backend=backend)
+
+
+@mcp.tool()
+def analyze_contract_text_tool(
+    text: str | None = None,
+    reference_number: str | None = None,
+    backend: str = "auto",
+) -> dict:
+    """Analyze contract text or an ingested contract: entities, risk flags, summary."""
+    return nlp_tools.analyze_contract_text(
+        text=text,
+        reference_number=reference_number,
+        backend=backend,
+    )
+
+
+@mcp.tool()
+def batch_nlp_tool(reference_numbers: list[str], backend: str = "auto") -> dict:
+    """Run NLP analysis across multiple contract reference numbers."""
+    return nlp_tools.batch_nlp(reference_numbers=reference_numbers, backend=backend)
 
 
 def run_server(transport: str = "stdio", port: int = 8000) -> None:

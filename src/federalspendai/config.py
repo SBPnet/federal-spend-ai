@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     request_timeout: float = 60.0
     default_limit: int = 50
     max_limit: int = 500
+    nlp_backend: str = "auto"
+    spacy_model: str = "en_core_web_sm"
 
     @property
     def database_path(self) -> Path:

@@ -28,12 +28,16 @@ FederalSpendAI is an open-source MCP server and CLI for **Canadian federal gover
 | `spending_by_department_tool` | Department-level spend totals |
 | `spending_by_category_tool` | UNSPSC / category spend totals |
 | `list_departments_tool` | Disambiguating department names |
+| `extract_legal_entities_tool` | NER on raw contract text |
+| `analyze_contract_text_tool` | Full NLP on text or ingested contract |
+| `batch_nlp_tool` | Batch NLP by reference numbers |
 
 ## Example prompts
 
 1. **Vendor research:** "List departments, then search contracts for vendor 'Lockheed' over $500k."
 2. **Oversight:** "Show spending by department and top 10 vendors for PSPC."
 3. **Contract lookup:** "Get contract details for reference MX-444028039551."
+4. **NLP review:** "Analyze contract MX-444028039551 for risk flags and entities."
 
 ## Response format
 
@@ -41,7 +45,7 @@ All tools return `{ "_meta": { source, lang, cached, timestamp }, "data": ... }`
 
 ## Planned extensions
 
-- NLP on contract text (spaCy + Blackstone)
 - Semantic search (sentence-transformers)
 - Anomaly detection (scikit-learn)
+- Public Accounts ingest and money-flow tracing
 - Cognitive Substrate event export hooks

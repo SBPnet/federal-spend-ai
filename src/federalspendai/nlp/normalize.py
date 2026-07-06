@@ -1,5 +1,9 @@
-"""Text normalization helpers for contract NLP (Phase 2)."""
+"""Text normalization helpers for contract NLP."""
 
-from federalspendai.nlp.normalize import normalize_text
+from __future__ import annotations
 
-__all__ = ["normalize_text"]
+
+def normalize_text(text: str | None) -> str:
+    if not text:
+        return ""
+    return " ".join(text.split())

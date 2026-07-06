@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "federalspendai"
-version = "0.1.0"
+version = "0.2.0"
 description = "Open-source Canadian federal spending analysis with MCP"
 readme = "README.md"
 license = "MIT"
@@ -30,6 +30,9 @@ dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
     "ruff>=0.6",
+]
+nlp = [
+    "blackstone>=0.1.15",
 ]
 
 [project.scripts]

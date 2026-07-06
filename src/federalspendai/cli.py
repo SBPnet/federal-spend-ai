@@ -95,21 +95,62 @@ def serve_cmd(transport: str, port: int) -> None:
 
 
 @cli.command("analyze")
-@click.option("--json", "as_json", is_flag=True, help="Reserved for future analytics output.")
-def analyze_cmd(as_json: bool) -> None:
-    """Run spending analysis workflows (anomaly detection — coming soon).
+@click.option("--reference-number", help="Analyze one ingested contract by reference number.")
+@click.option("--text", help="Analyze raw contract text instead of a stored contract.")
+@click.option(
+    "--backend",
+    default="auto",
+    show_default=True,
+    type=click.Choice(["auto", "spacy", "blackstone"]),
+    help="NER backend: auto prefers Blackstone when installed.",
+)
+@click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON output.")
+def analyze_cmd(
+    reference_number: str | None,
+    text: str | None,
+    backend: str,
+    as_json: bool,
+) -> None:
+    """Run contract NLP analysis: entities, risk flags, and summary.
 
     Examples:
 
-      federalspendai analyze
+      federalspendai analyze --reference-number MX-444028039551
+
+      federalspendai analyze --text "Sole source IT consulting contract" --json
     """
-    _ = as_json
-    click.echo(
-        "Analyze workflows (NLP, anomaly detection) are planned for a future release.\n"
-        "Use MCP tools via `federalspendai serve` for current querying capabilities.",
-        err=True,
+    from federalspendai.tools.nlp import analyze_contract_text
+
+    if not reference_number and not text:
+        click.echo(
+            "Error: Provide --reference-number or --text.\n"
+            "  federalspendai analyze --reference-number MX-444028039551\n"
+            "  federalspendai analyze --text \"Sole source consulting services\"",
+            err=True,
+        )
+        raise SystemExit(1)
+
+    payload = analyze_contract_text(
+        text=text,
+        reference_number=reference_number,
+        backend=backend,
     )
-    raise SystemExit(0)
+    if "error" in payload:
+        click.echo(payload["error"]["message"], err=True)
+        raise SystemExit(1)
+
+    if as_json:
+        click.echo(json.dumps(payload, indent=2, default=str))
+    else:
+        data = payload["data"]
+        click.echo(f"model: {data.get('model')}")
+        click.echo(f"summary: {data.get('summary')}")
+        if data.get("risk_flags"):
+            click.echo("risk_flags:")
+            for flag in data["risk_flags"]:
+                click.echo(f"  - [{flag['severity']}] {flag['code']}: {flag['message']}")
+        if data.get("entities"):
+            click.echo(f"entities: {len(data['entities'])} found")
 
 
 @cli.command("status")
