@@ -92,6 +92,90 @@ See [`examples/substrate_event_consumer.py`](examples/substrate_event_consumer.p
 | Proactive Disclosure | `d8f85d91-7dec-4fd1-8055-483b77225d8b` |
 | Public Accounts (Prof. Services) | `ac597ff8-ee13-48c3-b315-42e528090af2` |
 
+## Container
+
+The repo includes a `Dockerfile` and `docker-compose.yml` for running the MCP server and CLI in Docker.
+
+### Build
+
+```bash
+docker build -t federalspendai .
+```
+
+### Run MCP server (SSE over HTTP)
+
+```bash
+docker run -d \
+  --name federalspendai \
+  -p 8000:8000 \
+  -v federalspendai-data:/data \
+  federalspendai
+```
+
+### One-time data setup with Compose
+
+Load sample fixtures and build the embedding index into a named volume:
+
+```bash
+docker compose --profile init run --rm init
+docker compose up -d federalspendai
+```
+
+### CLI examples
+
+```bash
+# Ingest sample fixtures (no network required)
+docker run --rm \
+  -v federalspendai-data:/data \
+  -v "$(pwd)/tests/fixtures:/fixtures:ro" \
+  federalspendai \
+  federalspendai ingest --datasets awards,public_accounts --fixture-dir /fixtures
+
+# Build embeddings (downloads model on first run)
+docker run --rm \
+  -v federalspendai-data:/data \
+  federalspendai \
+  federalspendai embed
+
+# Check database status
+docker run --rm \
+  -v federalspendai-data:/data \
+  federalspendai \
+  federalspendai status
+```
+
+### MCP over stdio (Cursor / local MCP clients)
+
+For clients that spawn the process and communicate over stdin/stdout:
+
+```json
+{
+  "mcpServers": {
+    "federal-spend-ai": {
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "-v", "federalspendai-data:/data",
+        "federalspendai",
+        "federalspendai", "serve"
+      ]
+    }
+  }
+}
+```
+
+Pre-populate the `federalspendai-data` volume with ingest/embed before connecting.
+
+### Environment variables
+
+| Variable | Purpose |
+|----------|---------|
+| `FEDERALSPEND_DATA_DIR` | Root for DuckDB, cache, and events (default in image: `/data`) |
+| `FEDERALSPEND_DB_PATH` | Override DuckDB file path |
+| `FEDERALSPEND_SUBSTRATE_EVENT_URL` | Optional webhook for Cognitive Substrate events |
+
+Mount a volume at `FEDERALSPEND_DATA_DIR` so data persists across container restarts. The first `embed` run downloads a sentence-transformers model; live `ingest` requires outbound HTTPS to `open.canada.ca`.
+
 ## Development
 
 ```bash

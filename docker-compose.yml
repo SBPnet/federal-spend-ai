@@ -1,0 +1,28 @@
+services:
+  federalspendai:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - federalspendai-data:/data
+    environment:
+      FEDERALSPEND_DATA_DIR: /data
+      # FEDERALSPEND_SUBSTRATE_EVENT_URL: http://substrate:8080/events
+    command: ["federalspendai", "serve", "--transport", "sse", "--port", "8000"]
+
+  init:
+    build: .
+    volumes:
+      - federalspendai-data:/data
+      - ./tests/fixtures:/fixtures:ro
+    environment:
+      FEDERALSPEND_DATA_DIR: /data
+    command: >
+      sh -c "
+        federalspendai ingest --datasets awards,public_accounts --fixture-dir /fixtures &&
+        federalspendai embed
+      "
+    profiles: ["init"]
+
+volumes:
+  federalspendai-data:
