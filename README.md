@@ -131,6 +131,18 @@ federalspendai serve
 
 Substrate events (`IngestCompleted`, `EmbeddingIndexed`, `AnomalyFlagged`, `EngineCycleCompleted`) are written to `{data_dir}/events/` each cycle.
 
+### Anomaly storage and investigation
+
+Detected anomalies are **persisted in DuckDB** with stable IDs (department/vendor + month). Each anomaly tracks:
+
+| Field | Purpose |
+|-------|---------|
+| `evidence_fingerprint` | Hash of amounts, z-score, and sample contracts |
+| `investigation_status` | `pending`, `completed`, or `stale` |
+| `investigation_report` | Cached investigation JSON |
+
+`investigate_anomaly` returns a **cached report** when evidence is unchanged. It re-runs only when the fingerprint changes or `force=true`. Use `list_stored_anomalies_tool` to see open anomalies and investigation status.
+
 ## Cognitive Substrate integration
 
 Events are written to `~/.federalspendai/events/` and optionally POSTed to `FEDERALSPEND_SUBSTRATE_EVENT_URL`.

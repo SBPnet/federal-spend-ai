@@ -176,3 +176,27 @@ CREATE TABLE IF NOT EXISTS vendor_payee_links (
     PRIMARY KEY (vendor, payee)
 );
 """
+
+SPENDING_ANOMALIES_TABLE_DDL = """
+CREATE TABLE IF NOT EXISTS spending_anomalies (
+    anomaly_id VARCHAR PRIMARY KEY,
+    anomaly_type VARCHAR NOT NULL,
+    department VARCHAR,
+    vendor VARCHAR,
+    month VARCHAR NOT NULL,
+    observed_amount DOUBLE,
+    baseline_mean DOUBLE,
+    z_score DOUBLE,
+    contract_count INTEGER,
+    sample_contracts VARCHAR,
+    evidence_fingerprint VARCHAR NOT NULL,
+    anomaly_status VARCHAR DEFAULT 'open',
+    investigation_status VARCHAR DEFAULT 'pending',
+    investigation_fingerprint VARCHAR,
+    investigation_report VARCHAR,
+    first_seen_at TIMESTAMP DEFAULT now(),
+    last_seen_at TIMESTAMP DEFAULT now(),
+    last_updated_at TIMESTAMP DEFAULT now(),
+    last_investigated_at TIMESTAMP
+);
+"""

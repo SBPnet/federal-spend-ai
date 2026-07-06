@@ -176,12 +176,27 @@ def register_core_tools(mcp: FastMCP) -> None:
         anomaly_id: str | None = None,
         department: str | None = None,
         vendor: str | None = None,
+        force: bool = False,
     ) -> dict:
         """Investigate a spending anomaly with contract and Public Accounts evidence."""
         return anomaly_tools.investigate_anomaly_tool(
             anomaly_id=anomaly_id,
             department=department,
             vendor=vendor,
+            force=force,
+        )
+
+    @mcp.tool()
+    def list_stored_anomalies_tool(
+        anomaly_status: str = "open",
+        investigation_status: str | None = None,
+        limit: int = 50,
+    ) -> dict:
+        """List persisted spending anomalies and investigation status."""
+        return anomaly_tools.list_stored_anomalies_tool(
+            anomaly_status=anomaly_status,
+            investigation_status=investigation_status,
+            limit=limit,
         )
 
     @mcp.tool()

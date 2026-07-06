@@ -9,7 +9,6 @@ from federalspendai.config import Settings, get_settings
 from federalspendai.data.ingest import ingest_all
 from federalspendai.embeddings.index import build_embedding_index
 from federalspendai.substrate.events import (
-    emit_anomaly_flagged,
     emit_embedding_indexed,
     emit_engine_cycle_completed,
     emit_ingest_completed,
@@ -50,11 +49,6 @@ def run_cycle(
 
     anomaly_payload = detect_anomalies_tool(emit_events=emit_events)
     anomaly_data = anomaly_payload.get("data", {})
-    if emit_events:
-        for anomaly in anomaly_data.get("department_anomalies", []):
-            emit_anomaly_flagged(anomaly, settings=settings)
-        for anomaly in anomaly_data.get("vendor_anomalies", []):
-            emit_anomaly_flagged(anomaly, settings=settings)
 
     summary = {
         "datasets": datasets,
@@ -65,6 +59,7 @@ def run_cycle(
             "total": anomaly_data.get("total", 0),
             "department_count": len(anomaly_data.get("department_anomalies", [])),
             "vendor_count": len(anomaly_data.get("vendor_anomalies", [])),
+            "sync": anomaly_data.get("sync", {}),
         },
         "incremental": incremental,
     }
