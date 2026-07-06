@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "federal-spend-ai": {
+      "command": "federalspendai",
+      "args": ["serve"]
+    }
+  }
+}
