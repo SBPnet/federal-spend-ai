@@ -1,0 +1,20 @@
+[project]
+name = "federalspendai"
+version = "0.1.0"
+description = "Open-source federal spending analysis with MCP"
+requires-python = ">=3.11"
+dependencies = [
+    "fastmcp",
+    "spacy",
+    "transformers",
+    "sentence-transformers",
+    "polars",
+    "networkx",
+    "pydantic",
+    "requests",
+    "click",
+    "scikit-learn",
+]
+
+[project.scripts]
+federalspendai = "federalspendai.cli:cli"
