@@ -10,6 +10,7 @@ import click
 
 from federalspendai.config import get_settings
 from federalspendai.data.ingest import ingest_all
+from federalspendai.mcp.host import run_engine
 from federalspendai.mcp.server import run_server
 
 
@@ -49,7 +50,7 @@ def ingest_cmd(
 
       federalspendai ingest --datasets awards,contract_history
     """
-    _ = full, incremental
+    _ = full
     selected = [item.strip() for item in datasets.split(",") if item.strip()]
     if not selected:
         click.echo(
@@ -66,6 +67,7 @@ def ingest_cmd(
         settings=settings,
         dry_run=dry_run,
         fixture_dir=fixture_dir,
+        incremental=incremental and not full,
     )
     if as_json:
         click.echo(json.dumps(results, indent=2, default=str))
@@ -83,7 +85,7 @@ def ingest_cmd(
 @click.option("--transport", type=click.Choice(["stdio", "sse"]), default="stdio", show_default=True)
 @click.option("--port", default=8000, show_default=True, help="Port for SSE transport.")
 def serve_cmd(transport: str, port: int) -> None:
-    """Run the FederalSpendAI MCP server.
+    """Run the standalone FederalSpendAI MCP server (no background engine).
 
     Examples:
 
@@ -92,6 +94,42 @@ def serve_cmd(transport: str, port: int) -> None:
       federalspendai serve --transport sse --port 8000
     """
     run_server(transport=transport, port=port)
+
+
+@cli.command("engine")
+@click.option("--transport", type=click.Choice(["stdio", "sse"]), default="sse", show_default=True)
+@click.option("--port", default=8000, show_default=True, help="Port for SSE transport.")
+@click.option("--once", is_flag=True, help="Run one ingest/analyze cycle and exit.")
+@click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON output.")
+def engine_cmd(transport: str, port: int, once: bool, as_json: bool) -> None:
+    """Run the FederalSpendAI engine: auto-pull data, analyze, and host MCP plugins.
+
+    The engine periodically ingests open Canada data, refreshes embeddings, detects
+    anomalies, and exposes MCP tools from registered plugins.
+
+    Examples:
+
+      federalspendai engine
+
+      federalspendai engine --once --json
+
+      federalspendai engine --transport sse --port 8000
+    """
+    if once:
+        from federalspendai.engine.pipeline import run_cycle
+
+        summary = run_cycle(incremental=True, emit_events=True)
+        if as_json:
+            click.echo(json.dumps(summary, indent=2, default=str))
+        else:
+            click.echo(
+                f"cycle complete: changed={summary.get('datasets_changed', 0)} "
+                f"embedded={summary.get('embed', {}).get('indexed', 0)} "
+                f"anomalies={summary.get('anomalies', {}).get('total', 0)}"
+            )
+        return
+
+    run_engine(transport=transport, port=port)
 
 
 @cli.command("analyze")

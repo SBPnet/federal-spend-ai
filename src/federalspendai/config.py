@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     nlp_backend: str = "auto"
     spacy_model: str = "en_core_web_sm"
 
+    engine_enabled: bool = True
+    engine_poll_interval_seconds: int = 3600
+    engine_datasets: str = "awards,public_accounts"
+    engine_run_on_start: bool = True
+
     @property
     def database_path(self) -> Path:
         if self.db_path is not None:
@@ -32,6 +37,9 @@ class Settings(BaseSettings):
     @property
     def cache_dir(self) -> Path:
         return self.data_dir / "cache"
+
+    def engine_datasets_list(self) -> list[str]:
+        return [item.strip() for item in self.engine_datasets.split(",") if item.strip()]
 
 
 def get_settings() -> Settings:

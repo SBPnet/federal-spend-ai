@@ -20,4 +20,9 @@ VOLUME ["/data"]
 # SSE transport exposes HTTP for remote MCP clients.
 EXPOSE 8000
 
-CMD ["federalspendai", "serve", "--transport", "sse", "--port", "8000"]
+ENV FEDERALSPEND_ENGINE_ENABLED=true
+ENV FEDERALSPEND_ENGINE_DATASETS=awards,public_accounts
+ENV FEDERALSPEND_ENGINE_POLL_INTERVAL_SECONDS=3600
+ENV FEDERALSPEND_ENGINE_RUN_ON_START=true
+
+CMD ["federalspendai", "engine", "--transport", "sse", "--port", "8000"]

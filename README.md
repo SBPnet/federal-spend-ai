@@ -63,8 +63,11 @@ federalspendai analyze --reference-number MX-444028039551
 federalspendai detect-anomalies --json
 federalspendai trace "Irving Oil Limited"
 
-# MCP server
+# MCP server (standalone tools only)
 federalspendai serve
+
+# Engine: auto-pull, analyze, and host MCP plugins (recommended on VPS)
+federalspendai engine
 ```
 
 ## MCP tools (summary)
@@ -76,6 +79,57 @@ federalspendai serve
 | Search | `semantic_search_contracts`, `hybrid_search`, `build_embeddings_index` |
 | Analytics | `detect_anomalies`, `investigate_anomaly`, `correlate_effects` |
 | Graphs | `build_money_flow_graph`, `trace_money_flow`, `export_graph` |
+| Engine | `engine_status_tool` |
+
+## Engine (VPS / auto-pull)
+
+The **engine** is the recommended production mode. It runs on a schedule and:
+
+1. **Pulls** open Canada data (awards, public accounts) from CKAN
+2. **Embeds** new/changed contracts (incremental)
+3. **Detects** spending anomalies
+4. **Hosts MCP plugins** on a shared endpoint (`federalspendai engine`)
+
+MCP servers are **plugins** registered in `{data_dir}/plugins.json`. The built-in `federal-spend-ai` plugin provides all core tools. External MCP servers can be mounted as namespaced plugins (`pluginname__toolname`).
+
+```bash
+# Run engine locally
+federalspendai engine
+
+# One analysis cycle (ingest → embed → anomalies)
+federalspendai engine --once
+
+# Standalone MCP without background engine
+federalspendai serve
+```
+
+### Plugin config (`~/.federalspendai/plugins.json`)
+
+```json
+{
+  "plugins": [
+    { "name": "federal-spend-ai", "type": "builtin", "enabled": true },
+    {
+      "name": "my-plugin",
+      "type": "mcp",
+      "enabled": true,
+      "command": "my-mcp-server",
+      "args": ["serve"]
+    }
+  ]
+}
+```
+
+### Engine environment variables
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `FEDERALSPEND_ENGINE_ENABLED` | `true` | Enable background scheduler |
+| `FEDERALSPEND_ENGINE_POLL_INTERVAL_SECONDS` | `3600` | Seconds between auto-pull cycles |
+| `FEDERALSPEND_ENGINE_DATASETS` | `awards,public_accounts` | Datasets to pull each cycle |
+| `FEDERALSPEND_ENGINE_RUN_ON_START` | `true` | Run a cycle when the engine starts |
+
+Substrate events (`IngestCompleted`, `EmbeddingIndexed`, `AnomalyFlagged`, `EngineCycleCompleted`) are written to `{data_dir}/events/` each cycle.
 
 ## Cognitive Substrate integration
 
@@ -94,7 +148,7 @@ See [`examples/substrate_event_consumer.py`](examples/substrate_event_consumer.p
 
 ## Container
 
-The repo includes a `Dockerfile`, `docker-compose.yml`, and `setup.sh` for running the MCP server and CLI in Docker.
+The repo includes a `Dockerfile`, `docker-compose.yml`, and `setup.sh` for running the **engine** (auto-pull + MCP plugins) in Docker.
 
 ### VPS quick install (CyberPanel / bare Linux)
 
@@ -106,6 +160,8 @@ chmod +x setup.sh
 ./setup.sh --with-swap
 ```
 
+This installs Docker, builds the image, runs an initial **live data** analysis cycle, and starts the **engine** on **`127.0.0.1:8000`**. Use `--data fixtures` for offline sample data.
+
 Or clone first and run locally:
 
 ```bash
@@ -114,13 +170,13 @@ cd /opt/federalspendai
 sudo ./setup.sh --with-swap
 ```
 
-The script installs Docker (unless already present), builds the image, ingests sample fixtures, builds embeddings, and starts MCP on **`127.0.0.1:8000`** so OpenLiteSpeed / website ports **80/443** stay free. Connect from your machine via SSH tunnel:
+Connect from your machine via SSH tunnel:
 
 ```bash
 ssh -L 8000:127.0.0.1:8000 root@YOUR_VPS_IP
 ```
 
-Options: `./setup.sh --help` — use `--data live` for open.canada.ca ingest, `--skip-docker-install` if CyberPanel Docker is already configured.
+Options: `./setup.sh --help` — `--skip-docker-install` if CyberPanel Docker is already configured.
 
 ### Build
 
@@ -128,22 +184,23 @@ Options: `./setup.sh --help` — use `--data live` for open.canada.ca ingest, `-
 docker build -t federalspendai .
 ```
 
-### Run MCP server (SSE over HTTP)
+### Run engine (SSE over HTTP)
 
 ```bash
 docker run -d \
   --name federalspendai \
   -p 127.0.0.1:8000:8000 \
   -v federalspendai-data:/data \
+  -e FEDERALSPEND_ENGINE_ENABLED=true \
   federalspendai
 ```
 
-### One-time data setup with Compose
+The default image CMD runs `federalspendai engine` with auto-pull enabled.
 
-Load sample fixtures and build the embedding index into a named volume:
+### One-time analysis cycle with Compose
 
 ```bash
-docker compose --profile init run --rm init
+docker compose --profile init run --rm engine-once
 docker compose up -d federalspendai
 ```
 
