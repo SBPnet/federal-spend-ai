@@ -7,7 +7,6 @@ from unittest.mock import patch
 
 from federalspendai.config import Settings
 from federalspendai.engine.pipeline import run_cycle
-from federalspendai.engine.state import read_state
 from federalspendai.plugins.registry import ensure_plugins_config, load_plugins
 
 

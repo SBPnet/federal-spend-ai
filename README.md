@@ -145,9 +145,20 @@ Detected anomalies are **persisted in DuckDB** with stable IDs (department/vendo
 
 ## Cognitive Substrate integration
 
-Events are written to `~/.federalspendai/events/` and optionally POSTed to `FEDERALSPEND_SUBSTRATE_EVENT_URL`.
+Events are written to `~/.federalspendai/events/` in two formats:
 
-See [`examples/substrate_event_consumer.py`](examples/substrate_event_consumer.py).
+- **Legacy** — `FlowGraphExported`, `AnomalyFlagged`, etc. (`events/*.json`)
+- **ExperienceEvent** — Cognitive Substrate `experience.raw` compatible records (`events/experience/*.json`)
+
+Optionally POST to `FEDERALSPEND_SUBSTRATE_EVENT_URL`. Set `FEDERALSPEND_SUBSTRATE_EVENT_FORMAT` to `legacy`, `experience`, or `both` (default).
+
+See [`examples/substrate_event_consumer.py`](examples/substrate_event_consumer.py) and the BigPines companion demo:
+
+```bash
+python examples/bigpines_companion_demo.py --skip-embed
+```
+
+> **Fixture note:** Examples using `MX-444028039551` / Irving Oil use **synthetic illustrative fixtures** in `tests/fixtures/` for reproducible demos — not verified live government records. Run live ingest before publishing real findings.
 
 ## Data sources
 
@@ -268,6 +279,7 @@ Pre-populate the `federalspendai-data` volume with ingest/embed before connectin
 | `FEDERALSPEND_DATA_DIR` | Root for DuckDB, cache, and events (default in image: `/data`) |
 | `FEDERALSPEND_DB_PATH` | Override DuckDB file path |
 | `FEDERALSPEND_SUBSTRATE_EVENT_URL` | Optional webhook for Cognitive Substrate events |
+| `FEDERALSPEND_SUBSTRATE_EVENT_FORMAT` | `legacy`, `experience`, or `both` (default) |
 
 Mount a volume at `FEDERALSPEND_DATA_DIR` so data persists across container restarts. The first `embed` run downloads a sentence-transformers model; live `ingest` requires outbound HTTPS to `open.canada.ca`.
 
@@ -275,7 +287,7 @@ Mount a volume at `FEDERALSPEND_DATA_DIR` so data persists across container rest
 
 ```bash
 pip install -e ".[dev]"
-pytest   # 29 tests
+pytest   # 40 tests
 ruff check src tests
 ```
 

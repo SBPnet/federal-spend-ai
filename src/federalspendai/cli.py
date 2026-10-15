@@ -229,12 +229,22 @@ def embed_cmd(limit: int, as_json: bool, emit_events: bool) -> None:
 @cli.command("detect-anomalies")
 @click.option("--department", default=None, help="Filter anomalies to one department.")
 @click.option("--z-threshold", default=2.5, show_default=True)
+@click.option("--emit-events", is_flag=True, help="Emit Cognitive Substrate AnomalyFlagged events.")
 @click.option("--json", "as_json", is_flag=True)
-def detect_anomalies_cmd(department: str | None, z_threshold: float, as_json: bool) -> None:
+def detect_anomalies_cmd(
+    department: str | None,
+    z_threshold: float,
+    emit_events: bool,
+    as_json: bool,
+) -> None:
     """Detect spending anomalies in ingested contract data."""
     from federalspendai.tools.anomaly import detect_anomalies_tool
 
-    payload = detect_anomalies_tool(department=department, z_threshold=z_threshold)
+    payload = detect_anomalies_tool(
+        department=department,
+        z_threshold=z_threshold,
+        emit_events=emit_events,
+    )
     if as_json:
         click.echo(json.dumps(payload, indent=2, default=str))
     else:
@@ -258,6 +268,35 @@ def trace_cmd(vendor: str, department: str | None, as_json: bool) -> None:
         click.echo(f"vendor: {data.get('vendor')}")
         click.echo(f"contract_total: {data.get('contract_total')}")
         click.echo(f"public_account_links: {len(data.get('public_account_links', []))}")
+
+
+@cli.command("export-graph")
+@click.option("--vendor", default=None, help="Filter graph to one vendor.")
+@click.option("--department", default=None, help="Filter graph to one department.")
+@click.option("--emit-events", is_flag=True, help="Emit Cognitive Substrate FlowGraphExported event.")
+@click.option("--json", "as_json", is_flag=True)
+def export_graph_cmd(
+    vendor: str | None,
+    department: str | None,
+    emit_events: bool,
+    as_json: bool,
+) -> None:
+    """Export a money-flow graph as JSON (optionally emit substrate events)."""
+    from federalspendai.tools.graph import export_graph_tool
+
+    payload = export_graph_tool(
+        vendor=vendor,
+        department=department,
+        emit_events=emit_events,
+    )
+    if as_json:
+        click.echo(json.dumps(payload, indent=2, default=str))
+    else:
+        data = payload["data"]
+        summary = data.get("summary", {})
+        click.echo(
+            f"graph: {summary.get('node_count', 0)} nodes, {summary.get('edge_count', 0)} edges"
+        )
 
 
 def main() -> None:

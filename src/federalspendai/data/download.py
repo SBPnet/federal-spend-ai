@@ -8,6 +8,7 @@ from pathlib import Path
 import httpx
 
 from federalspendai.config import Settings, get_settings
+from federalspendai.http_client import default_headers
 
 
 def file_checksum(path: Path) -> str:
@@ -23,7 +24,13 @@ def download_file(url: str, dest: Path, settings: Settings | None = None) -> str
   settings = settings or get_settings()
   dest.parent.mkdir(parents=True, exist_ok=True)
   digest = hashlib.sha256()
-  with httpx.stream("GET", url, timeout=settings.request_timeout, follow_redirects=True) as response:
+  with httpx.stream(
+    "GET",
+    url,
+    timeout=settings.request_timeout,
+    follow_redirects=True,
+    headers=default_headers(),
+  ) as response:
     response.raise_for_status()
     with dest.open("wb") as handle:
       for chunk in response.iter_bytes():
